@@ -1,6 +1,12 @@
 # AhsayCBS Authentication Bypass & RCE
 
-**CVE-2026-105133 + CVE-2026-105134** — Unauthenticated takeover of AhsayCBS ≤10.3.4
+**CVE-2026-105133 + CVE-2026-105134** — Unauthenticated remote code execution in AhsayCBS ≤10.3.4
+
+## Blog Post
+
+Technical analysis covering root cause, exploitation, and indicators of compromise is available on the Horizon3.ai attack research blog:
+
+[https://horizon3.ai/attack-research/attack-blogs/ahsaycbs-cve-2026-105133-cve-2026-105134-technical-analysis/](https://horizon3.ai/attack-research/attack-blogs/ahsaycbs-cve-2026-105133-cve-2026-105134-technical-analysis/)
 
 ## Overview
 
@@ -17,8 +23,6 @@ The `com.ahsay.obs.api.json.JSONApi.execute()` method skips the `checkSysPwd()` 
 #### CVE-2026-105134: Path Traversal in Replication Upload
 
 The replication receiver file upload endpoint (`PUT /rps/obs7/rpsfile/upload`) constructs the write path from attacker-controlled `UserHome` and `TopDir` headers via `getReplicatedPath()` **without** applying the `com.ahsay.c` path denylist. An attacker can traverse into Tomcat's web-served directory (`../../webapps/`) to upload executable JSP files.
-
-**Impact:** Unauthenticated RCE as the service account (SYSTEM on Windows, root on Linux).
 
 ## Exploitation Modes
 
@@ -153,71 +157,11 @@ Replication RCE:
   --shell-name NAME         Webshell filename (default: random)
 ```
 
-## Responsible Use & Safety
+## Follow Horizon3.ai Attack Team for Latest Security Research
 
-The exploit has built-in safeguards:
+* [Horizon3 Attack Team](https://twitter.com/Horizon3Attack)
 
-- **Admin accounts are automatically removed** after each run unless `--no-cleanup` is set
-- **Webshells require a per-run random authentication secret** — no unauthenticated RCE backdoors are left behind
-- **Receiver artifacts are cleaned up** after command execution
-- The `--check` flag provides **non-invasive vulnerability detection** that writes nothing to the target
+## Disclaimer
 
-Use `--no-cleanup` only for authorized penetration testing and persistent access scenarios.
+"This software has been created purely for the purposes of academic research and for the development of effective defensive techniques, and is not intended to be used to attack systems except where explicitly authorized." Project maintainers assume no liability for misuse. Use responsibly.
 
-## Technical Details
-
-### Attack Chain
-
-1. **CVE-2026-105133:** Send a JSON request with `{"FromServlet":"Y"}` to bypass `checkSysPwd()` validation
-2. **Admin Mode:** Call `AddSysUser` to create a system administrator without credentials
-3. **RCE Mode:** Call `UpdateReceivers` to create a replication receiver, then upload a JSP file via path traversal into `/webapps/`
-4. **RCE Execution:** Access the uploaded JSP with the authentication secret to execute arbitrary OS commands
-
-### Requirements for Each Mode
-
-| Mode | Prerequisites | Limitations |
-|------|---------------|-------------|
-| Admin Takeover | None | Creates temporary account; cleanup may fail if service is interrupted |
-| Replication RCE | Licensed replication receiver | Requires `--install-root` to be correct for the target OS; webshell auth is required |
-
-### Path Traversal Details
-
-The replication upload endpoint uses attacker-controlled headers to build the file path:
-
-```
-UserHome: ../../webapps/rps
-TopDir:   ../../webapps/rps
-Result:   /opt/AhsayCBS/rpsrecv_<random>/../../webapps/rps/<filename>.jsp
-          → Resolves to: /opt/AhsayCBS/webapps/rps/<filename>.jsp
-```
-
-The webshell is served by Tomcat and executed with the service account privileges.
-
-## Tested Versions
-
-- AhsayCBS 10.3.4 and earlier
-- Tested on:
-  - Ubuntu 22.04 LTS (Java 11, OpenJDK)
-  - CentOS 7 (Java 8, OpenJDK)
-  - Windows Server 2019 (Java 11)
-
-## Mitigation
-
-1. **Upgrade immediately** to AhsayCBS 10.3.5 or later
-2. **Network segmentation:** Restrict access to AhsayCBS consoles to trusted networks
-3. **WAF rules:** Block requests containing `FromServlet=Y` to the JSON API
-4. **Monitoring:** Alert on unexpected `AddSysUser` or replication receiver creation events
-
-## References
-
-- CVE-2026-105133: JSON API authentication bypass
-- CVE-2026-105134: Replication path traversal RCE
-- Vendor advisory: [AhsayCBS Security Update](https://www.ahsay.com/en/security-update)
-
-## License
-
-This proof of concept is provided for authorized security testing only. Unauthorized access to computer systems is illegal.
-
----
-
-**Horizon3.ai** | Authorized security testing only. This PoC is designed for controlled lab environments and authorized penetration tests. All targets must be owned by the testing organization.
